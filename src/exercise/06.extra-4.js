@@ -7,67 +7,102 @@ import {
   useForceRerender,
   useDebouncedState,
   AppGrid,
-  updateGridState,
-  updateGridCellState,
 } from '../utils'
-// 🐨 you're gonna need these:
-// import {RecoilRoot, useRecoilState, useRecoilCallback, atomFamily} from 'recoil'
+
+import {
+  RecoilRoot,
+  useRecoilState,
+  useRecoilCallback,
+  atomFamily,
+} from 'recoil'
 
 const AppStateContext = React.createContext()
+
+// ============================================================
+// INITIAL GRID
+// ============================================================
 
 const initialGrid = Array.from({length: 100}, () =>
   Array.from({length: 100}, () => Math.random() * 100),
 )
 
-// 🐨 create an atomFamily called `cellAtoms` here where the
-// default callback function accepts an object with the
-// `row` and `column` and returns the value from the initialGrid
-// 💰 initialGrid[row][column]
+// ============================================================
+// 1. CREATE A RECOIL ATOM FOR EACH CELL
+// ============================================================
 
-// 💰 I'm going to give this hook to you as it's mostly here for our contrived
-// example purposes. Just comment this in when you're ready to use it.
-// Here's how it's used:
-// const updateGrid = useUpdateGrid()
-// then later: updateGrid({rows, columns})
-// function useUpdateGrid() {
-//   return useRecoilCallback(({set}) => ({rows, columns}) => {
-//     for (let row = 0; row < rows; row++) {
-//       for (let column = 0; column < columns; column++) {
-//         if (Math.random() > 0.7) {
-//           set(cellAtoms({row, column}), Math.random() * 100)
-//         }
-//       }
-//     }
-//   })
-// }
+// Each cell gets its own piece of state.
+//
+// Example:
+// cellAtoms({row: 0, column: 0})
+// cellAtoms({row: 0, column: 1})
+// cellAtoms({row: 1, column: 0})
+//
+// This means changing one cell does not require the entire
+// grid state to change.
+
+const cellAtoms = atomFamily({
+  key: 'cell',
+  default: ({row, column}) => initialGrid[row][column],
+})
+
+// ============================================================
+// 2. UPDATE GRID WITH RECOIL
+// ============================================================
+
+// This replaces the old UPDATE_GRID reducer action.
+//
+// Recoil allows us to update individual cell atoms.
+
+function useUpdateGrid() {
+  return useRecoilCallback(({set}) => ({rows, columns}) => {
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        if (Math.random() > 0.7) {
+          set(
+            cellAtoms({row, column}),
+            Math.random() * 100,
+          )
+        }
+      }
+    }
+  })
+}
+
+// ============================================================
+// 3. APP STATE
+// ============================================================
+
+// The grid is no longer stored here.
+// Recoil owns the grid state.
+//
+// The dogName is still handled by the normal React reducer.
 
 function appReducer(state, action) {
   switch (action.type) {
     case 'TYPED_IN_DOG_INPUT': {
-      return {...state, dogName: action.dogName}
+      return {
+        ...state,
+        dogName: action.dogName,
+      }
     }
-    // 💣 we're going to use recoil to update the cell values, so delete this case
-    case 'UPDATE_GRID_CELL': {
-      return {...state, grid: updateGridCellState(state.grid, action)}
-    }
-    // 💣 the useUpdateGrid hook above will handle this. Delete this case.
-    case 'UPDATE_GRID': {
-      return {...state, grid: updateGridState(state.grid)}
-    }
+
     default: {
       throw new Error(`Unhandled action type: ${action.type}`)
     }
   }
 }
 
+// ============================================================
+// 4. APP PROVIDER
+// ============================================================
+
 function AppProvider({children}) {
   const [state, dispatch] = React.useReducer(appReducer, {
     dogName: '',
-    // 💣 we're moving our state outside of React with our atom, delete this:
-    grid: initialGrid,
   })
-  // 🦉 notice that we don't even need to bother memoizing this value
+
   const value = [state, dispatch]
+
   return (
     <AppStateContext.Provider value={value}>
       {children}
@@ -75,21 +110,42 @@ function AppProvider({children}) {
   )
 }
 
+// ============================================================
+// 5. USE APP STATE
+// ============================================================
+
 function useAppState() {
   const context = React.useContext(AppStateContext)
+
   if (!context) {
-    throw new Error('useAppState must be used within the AppProvider')
+    throw new Error(
+      'useAppState must be used within the AppProvider',
+    )
   }
+
   return context
 }
 
+// ============================================================
+// 6. GRID
+// ============================================================
+
 function Grid() {
-  // 🐨 we're no longer storing the grid in our app state, so instead you
-  // want to get the updateGrid function from useUpdateGrid
-  const [, dispatch] = useAppState()
+  // We no longer use dispatch to update the grid.
+  // Instead, we get updateGrid from Recoil.
+
+  const updateGrid = useUpdateGrid()
+
   const [rows, setRows] = useDebouncedState(50)
   const [columns, setColumns] = useDebouncedState(50)
-  const updateGridData = () => dispatch({type: 'UPDATE_GRID'})
+
+  const updateGridData = () => {
+    updateGrid({
+      rows,
+      columns,
+    })
+  }
+
   return (
     <AppGrid
       onUpdateGrid={updateGridData}
@@ -101,16 +157,26 @@ function Grid() {
     />
   )
 }
-// 💣 remove memoization. It's not needed!
-Grid = React.memo(Grid)
+
+// ============================================================
+// 7. CELL
+// ============================================================
 
 function Cell({row, column}) {
-  // 🐨 replace these three lines with useRecoilState for the cellAtoms
-  // 💰 Here's how you calculate the new value for the cell when it's clicked:
-  //    Math.random() * 100
-  const [state, dispatch] = useAppState()
-  const cell = state.grid[row][column]
-  const handleClick = () => dispatch({type: 'UPDATE_GRID_CELL', row, column})
+  // Each Cell subscribes only to its own Recoil atom.
+
+  const [cell, setCell] = useRecoilState(
+    cellAtoms({
+      row,
+      column,
+    }),
+  )
+
+  // Clicking the cell updates only this cell.
+
+  const handleClick = () => {
+    setCell(Math.random() * 100)
+  }
 
   return (
     <button
@@ -125,28 +191,36 @@ function Cell({row, column}) {
     </button>
   )
 }
-// 🦉 notice we don't need to bother memoizing any of the components!!
-// 💣 remove memoization
-Cell = React.memo(Cell)
+
+// ============================================================
+// 8. DOG NAME INPUT
+// ============================================================
 
 function DogNameInput() {
   const [state, dispatch] = useAppState()
+
   const {dogName} = state
 
   function handleChange(event) {
     const newDogName = event.target.value
-    dispatch({type: 'TYPED_IN_DOG_INPUT', dogName: newDogName})
+
+    dispatch({
+      type: 'TYPED_IN_DOG_INPUT',
+      dogName: newDogName,
+    })
   }
 
   return (
     <form onSubmit={e => e.preventDefault()}>
       <label htmlFor="dogName">Dog Name</label>
+
       <input
         value={dogName}
         onChange={handleChange}
         id="dogName"
         placeholder="Toto"
       />
+
       {dogName ? (
         <div>
           <strong>{dogName}</strong>, I've a feeling we're not in Kansas anymore
@@ -155,18 +229,31 @@ function DogNameInput() {
     </form>
   )
 }
+
+// ============================================================
+// 9. APP
+// ============================================================
+
 function App() {
   const forceRerender = useForceRerender()
+
   return (
     <div className="grid-app">
-      <button onClick={forceRerender}>force rerender</button>
-      {/* 🐨 wrap this in a RecoilRoot */}
-      <AppProvider>
-        <div>
-          <DogNameInput />
-          <Grid />
-        </div>
-      </AppProvider>
+      <button onClick={forceRerender}>
+        force rerender
+      </button>
+
+      {/* RecoilRoot is required for Recoil */}
+
+      <RecoilRoot>
+        <AppProvider>
+          <div>
+            <DogNameInput />
+
+            <Grid />
+          </div>
+        </AppProvider>
+      </RecoilRoot>
     </div>
   )
 }
