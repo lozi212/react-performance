@@ -70,8 +70,8 @@ function App() {
     run(getItems(inputValue))
   }, [inputValue, run])
 
-  const items = allItems.slice(0, 100)
-
+  const items = React.useMemo(() => allItems.slice(0, 100), [allItems])
+  
   const {
     selectedItem,
     highlightedIndex,
