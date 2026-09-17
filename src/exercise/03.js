@@ -4,9 +4,9 @@
 import * as React from 'react'
 import {useCombobox} from '../use-combobox'
 import {getItems} from '../workerized-filter-cities'
-import {useAsync, useForceRerender} from '../utils'
+import {useForceRerender, useAsync} from '../utils'
 
-function Menu({
+const Menu = React.memo(function Menu({
   items,
   getMenuProps,
   getItemProps,
@@ -21,27 +21,24 @@ function Menu({
           getItemProps={getItemProps}
           item={item}
           index={index}
-          selectedItem={selectedItem}
-          highlightedIndex={highlightedIndex}
+          isSelected={selectedItem?.id === item.id}
+          isHighlighted={highlightedIndex === index}
         >
           {item.name}
         </ListItem>
       ))}
     </ul>
   )
-}
-// 🐨 Memoize the Menu here using React.memo
+})
 
-function ListItem({
+const ListItem = React.memo(function ListItem({
   getItemProps,
   item,
   index,
-  selectedItem,
-  highlightedIndex,
+  isSelected,
+  isHighlighted,
   ...props
 }) {
-  const isSelected = selectedItem?.id === item.id
-  const isHighlighted = highlightedIndex === index
   return (
     <li
       {...getItemProps({
@@ -55,17 +52,21 @@ function ListItem({
       })}
     />
   )
-}
-// 🐨 Memoize the ListItem here using React.memo
+})
 
 function App() {
   const forceRerender = useForceRerender()
   const [inputValue, setInputValue] = React.useState('')
 
-  const {data: allItems, run} = useAsync({data: [], status: 'pending'})
+  const {data: allItems, run} = useAsync({
+    data: [],
+    status: 'pending',
+  })
+
   React.useEffect(() => {
     run(getItems(inputValue))
   }, [inputValue, run])
+
   const items = allItems.slice(0, 100)
 
   const {
@@ -80,7 +81,8 @@ function App() {
   } = useCombobox({
     items,
     inputValue,
-    onInputValueChange: ({inputValue: newValue}) => setInputValue(newValue),
+    onInputValueChange: ({inputValue: newValue}) =>
+      setInputValue(newValue),
     onSelectedItemChange: ({selectedItem}) =>
       alert(
         selectedItem
@@ -93,14 +95,21 @@ function App() {
   return (
     <div className="city-app">
       <button onClick={forceRerender}>force rerender</button>
+
       <div>
         <label {...getLabelProps()}>Find a city</label>
+
         <div {...getComboboxProps()}>
           <input {...getInputProps({type: 'text'})} />
-          <button onClick={() => selectItem(null)} aria-label="toggle menu">
+
+          <button
+            onClick={() => selectItem(null)}
+            aria-label="toggle menu"
+          >
             &#10005;
           </button>
         </div>
+
         <Menu
           items={items}
           getMenuProps={getMenuProps}
@@ -114,8 +123,3 @@ function App() {
 }
 
 export default App
-
-/*
-eslint
-  no-func-assign: 0,
-*/
